@@ -1,0 +1,3 @@
+[submodule "lib/JPEGDecoder"]
+	path = lib/JPEGDecoder
+	url = https://github.com/MakotoKurauchi/JPEGDecoder.git
