@@ -1,3 +1,6 @@
 [submodule "lib/JPEGDecoder"]
 	path = lib/JPEGDecoder
 	url = https://github.com/MakotoKurauchi/JPEGDecoder.git
+[submodule "lib/AD9850"]
+	path = lib/AD9850
+	url = https://github.com/F4GOJ/AD9850.git
