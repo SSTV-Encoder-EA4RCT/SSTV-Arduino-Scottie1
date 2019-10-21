@@ -1,9 +1,8 @@
 #include <Arduino.h>
-#include <SoftwareSerial.h>
 #include <SPI.h>
 #include <SD.h>
-#include <AD9850>
-#include <JPEGDecoder>
+#include <AD9850.h>
+#include <JPEGDecoder.h>
 #include <Adafruit_VC0706.h>
 
 // Scottie 1 properties
@@ -40,8 +39,7 @@ byte buffG[320]; // Buffer conintating Green values of the line
 byte buffB[320]; // Buffer conintating Blue values of the line
 
 // Camera stuff
-SoftwareSerial cameraconnection = SoftwareSerial(2, 3);
-Adafruit_VC0706 cam = Adafruit_VC0706(&cameraconnection);
+Adafruit_VC0706 cam = Adafruit_VC0706(&Serial1);
 
 
 uint16_t playPixel(long pixel);
@@ -58,11 +56,11 @@ void setup() {
   Serial.begin(9600);
 
   // AD9850 initilize
-  DDS.begin(W_CLK_PIN, FQ_UD_PIN, DATA_PIN, RESET_PIN);
+  DDS.begin(AD9850_CLK_PIN, AD9850_FQ_UPDATE_PIN, AD9850_DATA_PIN, AD9850_RST_PIN);
 
   // Sd initialize
   Serial.print("Initializing SD card...");
-  if (!SD.begin(SDSLAVE)) {
+  if (!SD.begin(SD_SLAVE_PIN)) {
     Serial.println("initialization failed!");
     while (1);
   }
@@ -136,7 +134,7 @@ void transmit_mili(int freq, float duration){
 }
 
 void scottie1_transmit_file(String filename){
-  File myFile = SD.open(path);
+  File myFile = SD.open(filename);
   if (myFile) {
     Serial.println("test.txt:");
 
@@ -197,7 +195,7 @@ void scottie1_transmit_file(String filename){
   }
 }
 
-void jpeg_decode(String filename){
+void jpeg_decode(char* filename){
   char str[100];
   uint8 *pImg;
   int x,y,bx,by;
