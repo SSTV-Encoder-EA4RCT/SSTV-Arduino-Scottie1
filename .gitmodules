@@ -4,3 +4,6 @@
 [submodule "lib/AD9850"]
 	path = lib/AD9850
 	url = https://github.com/F4GOJ/AD9850.git
+[submodule "lib/Adafruit-VC0706-Serial-Camera-Library"]
+	path = lib/Adafruit-VC0706-Serial-Camera-Library
+	url = https://github.com/adafruit/Adafruit-VC0706-Serial-Camera-Library.git

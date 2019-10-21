@@ -1,6 +1,10 @@
 #include <Arduino.h>
+#include <SoftwareSerial.h>
+#include <SPI.h>
+#include <SD.h>
 #include <AD9850>
 #include <JPEGDecoder>
+#include <Adafruit_VC0706.h>
 
 // Scottie 1 properties
 #define COLORCORRECTION 3.1372549
@@ -27,9 +31,18 @@
 
 uint8_t phase = 0;
 
+char pic_filename[13];
+
+uint8_t frameBuf[81920]; //320*256
+
 byte buffR[320]; // Buffer conintating Red values of the line
 byte buffG[320]; // Buffer conintating Green values of the line
 byte buffB[320]; // Buffer conintating Blue values of the line
+
+// Camera stuff
+SoftwareSerial cameraconnection = SoftwareSerial(2, 3);
+Adafruit_VC0706 cam = Adafruit_VC0706(&cameraconnection);
+
 
 uint16_t playPixel(long pixel);
 uint16_t scottie_freq(uint8_t c);
@@ -38,6 +51,8 @@ void scottie1_calibrationHeader();
 void transmit_micro(int freq, float duration);
 void transmit_mili(int freq, float duration);
 void scottie1_transmit_file(String filename);
+void shot_pic();
+void jpeg_decode();
 
 void setup() {
   Serial.begin(9600);
@@ -52,10 +67,14 @@ void setup() {
     while (1);
   }
   Serial.println("initialization done.");
+
+  shot_pic();
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
+
+
 }
 
 /**
@@ -176,4 +195,112 @@ void scottie1_transmit_file(String filename){
     // if the file didn't open, print an error:
     Serial.println("error opening test.txt");
   }
+}
+
+void jpeg_decode(String filename){
+  char str[100];
+  uint8 *pImg;
+  int x,y,bx,by;
+
+  // Decoding start
+  JpegDec.decode(filename,0);
+  // Image Information
+  Serial.print("Width     :");
+  Serial.println(JpegDec.width);
+  Serial.print("Height    :");
+  Serial.println(JpegDec.height);
+  Serial.print("Components:");
+  Serial.println(JpegDec.comps);
+  Serial.print("MCU / row :");
+  Serial.println(JpegDec.MCUSPerRow);
+  Serial.print("MCU / col :");
+  Serial.println(JpegDec.MCUSPerCol);
+  Serial.print("Scan type :");
+  Serial.println(JpegDec.scanType);
+  Serial.print("MCU width :");
+  Serial.println(JpegDec.MCUWidth);
+  Serial.print("MCU height:");
+  Serial.println(JpegDec.MCUHeight);
+  Serial.println("");
+
+  while(JpegDec.read()){
+      pImg = JpegDec.pImage ;
+      for(by=0; by<JpegDec.MCUHeight; by++){
+          for(bx=0; bx<JpegDec.MCUWidth; bx++){
+              x = JpegDec.MCUx * JpegDec.MCUWidth + bx;
+              y = JpegDec.MCUy * JpegDec.MCUHeight + by;
+              if(x<JpegDec.width && y<JpegDec.height){
+                  if(JpegDec.comps == 1){ // Grayscale
+                      sprintf(str,"%u", pImg[0]);
+                  }else{ // RGB
+                      sprintf(str,"%u%u%u", pImg[0], pImg[1], pImg[2]);
+                  }
+              }
+              pImg += JpegDec.comps ;
+          }
+      }
+  }
+}
+
+void shot_pic(){
+  // Try to locate the camera
+  if (cam.begin()) {
+    Serial.println("Camera Found:");
+  } else {
+    Serial.println("No camera found?");
+    return;
+  }
+
+  cam.setImageSize(VC0706_320x240);
+
+  Serial.println("Snap in 3 secs...");
+  delay(3000);
+
+  if (! cam.takePicture())
+    Serial.println("Failed to snap!");
+  else
+    Serial.println("Picture taken!");
+
+  // Create an image with the name IMAGExx.JPG`
+  strcpy(pic_filename, "IMAGE00.JPG");
+  for (int i = 0; i < 100; i++) {
+    pic_filename[5] = '0' + i/10;
+    pic_filename[6] = '0' + i%10;
+    // create if does not exist, do not open existing, write, sync after write
+    if (! SD.exists(pic_filename)) {
+      break;
+    }
+  }
+
+  // Open the file for writing
+  File imgFile = SD.open(pic_filename, FILE_WRITE);
+
+  // Get the size of the image (frame) taken
+  uint16_t jpglen = cam.frameLength();
+  Serial.print("Storing ");
+  Serial.print(jpglen, DEC);
+  Serial.print(" byte image.");
+
+  int32_t time = millis();
+  pinMode(8, OUTPUT);
+  // Read all the data up to # bytes!
+  byte wCount = 0; // For counting # of writes
+  while (jpglen > 0) {
+    // read 32 bytes at a time;
+    uint8_t *buffer;
+    uint8_t bytesToRead = min(32, jpglen); // change 32 to 64 for a speedup but may not work with all setups!
+    buffer = cam.readPicture(bytesToRead);
+    imgFile.write(buffer, bytesToRead);
+    if(++wCount >= 64) { // Every 2K, give a little feedback so it doesn't appear locked up
+      Serial.print('.');
+      wCount = 0;
+    }
+    //Serial.print("Read ");  Serial.print(bytesToRead, DEC); Serial.println(" bytes");
+    jpglen -= bytesToRead;
+  }
+  imgFile.close();
+
+  time = millis() - time;
+  Serial.println("done!");
+  Serial.print(time); Serial.println(" ms elapsed");
 }
