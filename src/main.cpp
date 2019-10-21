@@ -83,7 +83,7 @@ void setup() {
   Serial.print("Writting on: ");
   Serial.println(pic_decoded_filename);
 
-  jpeg_decode("IMAGE07.JPG", pic_decoded_filename);
+  jpeg_decode(pic_filename, pic_decoded_filename);
 
   scottie1_transmit_file(pic_decoded_filename);
 }
