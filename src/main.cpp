@@ -17,10 +17,10 @@
 #define SYNCPULSEFREQ 1200                  //Hz
 
 // AD9850 consts
-#define AD9850_CLK_PIN 99         //Working clock output pin
-#define AD9850_FQ_UPDATE_PIN 99   //Frequency update
-#define AD9850_DATA_PIN 99        //Serial data output pin
-#define AD9850_RST_PIN 99         //Reset output pin
+#define AD9850_CLK_PIN 22         //Working clock output pin
+#define AD9850_FQ_UPDATE_PIN 23   //Frequency update
+#define AD9850_DATA_PIN 24        //Serial data output pin
+#define AD9850_RST_PIN 25         //Reset output pin
 
 // Sd consts
 #define SD_SLAVE_PIN 53
@@ -103,7 +103,9 @@ const uint8_t fonts[43][11] = {
 };
 
 void setup() {
+  delay(5000);
   Serial.begin(9600);
+  Serial.println("Starting");
 
   // AD9850 initilize
   DDS.begin(AD9850_CLK_PIN, AD9850_FQ_UPDATE_PIN, AD9850_DATA_PIN, AD9850_RST_PIN);
@@ -118,11 +120,24 @@ void setup() {
 
   shot_pic();
 
+  Serial.print("Picture taken saved on:");
+  Serial.println(pic_filename);
+
   // Changing name
+<<<<<<< HEAD
   strcpy(pic_decoded_filename,pic_filename);
   pic_decoded_filename[8] = 'B';
   pic_decoded_filename[9] = 'I';
   pic_decoded_filename[10] = 'N';
+=======
+  strcpy(pic_decoded_filename, pic_filename);
+  pic_decoded_filename[8] = 'B';
+  pic_decoded_filename[9] = 'I';
+  pic_decoded_filename[10] = 'N';
+
+  Serial.print("Writting on: ");
+  Serial.println(pic_decoded_filename);
+>>>>>>> acien
 
   jpeg_decode(pic_filename, pic_decoded_filename);
 
@@ -194,10 +209,10 @@ void transmit_mili(int freq, float duration){
 }
 
 void scottie1_transmit_file(char* filename){
+  Serial.println("Transmitting picture");
+
   File myFile = SD.open(filename);
   if (myFile) {
-    Serial.println("test.txt:");
-
     /** VOX TONE (OPTIONAL) **/
     vox_tone();
 
@@ -332,6 +347,7 @@ void jpeg_decode(char* filename, char* fileout){
   Serial.println(JpegDec.MCUHeight);
   Serial.println("");
 
+  Serial.println("Writting bin to SD");
   while(JpegDec.read()){
       pImg = JpegDec.pImage ;
       for(by=0; by<JpegDec.MCUHeight; by++){
@@ -351,6 +367,7 @@ void jpeg_decode(char* filename, char* fileout){
       }
   }
 
+  Serial.println("Bin has been written on SD");
   imgFile.close();
 }
 
