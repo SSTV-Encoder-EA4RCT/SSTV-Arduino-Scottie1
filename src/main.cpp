@@ -31,6 +31,7 @@
 uint8_t phase = 0;
 
 char pic_filename[13];
+char pic_decoded_filename[13];
 
 uint8_t frameBuf[81920]; //320*256
 
@@ -48,9 +49,9 @@ void vox_tone();
 void scottie1_calibrationHeader();
 void transmit_micro(int freq, float duration);
 void transmit_mili(int freq, float duration);
-void scottie1_transmit_file(String filename);
+void scottie1_transmit_file(char* filename);
 void shot_pic();
-void jpeg_decode();
+void jpeg_decode(char* filename, char* fileout);
 
 void setup() {
   Serial.begin(9600);
@@ -67,6 +68,16 @@ void setup() {
   Serial.println("initialization done.");
 
   shot_pic();
+
+  // Changing name
+  pic_decoded_filename = pic_filename;
+  pic_decoded[10] = 'B';
+  pic_decoded[11] = 'I';
+  pic_decoded[12] = 'N';
+
+  jpeg_decode(pic_filename, pic_decoded_filename);
+
+  scottie1_transmit_file(pic_decoded_filename);
 }
 
 void loop() {
@@ -133,7 +144,7 @@ void transmit_mili(int freq, float duration){
   delay(duration);
 }
 
-void scottie1_transmit_file(String filename){
+void scottie1_transmit_file(char* filename){
   File myFile = SD.open(filename);
   if (myFile) {
     Serial.println("test.txt:");
@@ -195,10 +206,13 @@ void scottie1_transmit_file(String filename){
   }
 }
 
-void jpeg_decode(char* filename){
+void jpeg_decode(char* filename, char* fileout){
   char str[100];
   uint8 *pImg;
   int x,y,bx,by;
+
+  // Open the file for writing
+  File imgFile = SD.open(fileout, FILE_WRITE);
 
   // Decoding start
   JpegDec.decode(filename,0);
@@ -229,15 +243,18 @@ void jpeg_decode(char* filename){
               y = JpegDec.MCUy * JpegDec.MCUHeight + by;
               if(x<JpegDec.width && y<JpegDec.height){
                   if(JpegDec.comps == 1){ // Grayscale
-                      sprintf(str,"%u", pImg[0]);
+                      //sprintf(str,"%u", pImg[0]);
                   }else{ // RGB
-                      sprintf(str,"%u%u%u", pImg[0], pImg[1], pImg[2]);
+                      //sprintf(str,"%u%u%u", pImg[0], pImg[1], pImg[2]);
+                      imgFile.write(pImg, 3);
                   }
               }
               pImg += JpegDec.comps ;
           }
       }
   }
+
+  imgFile.close();
 }
 
 void shot_pic(){
