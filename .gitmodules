@@ -7,3 +7,6 @@
 [submodule "lib/Adafruit-VC0706-Serial-Camera-Library"]
 	path = lib/Adafruit-VC0706-Serial-Camera-Library
 	url = https://github.com/adafruit/Adafruit-VC0706-Serial-Camera-Library.git
+[submodule "lib/SD"]
+	path = lib/SD
+	url = https://github.com/adafruit/SD.git
