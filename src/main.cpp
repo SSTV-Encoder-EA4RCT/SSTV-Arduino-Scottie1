@@ -1,9 +1,18 @@
+/**
+ * @author: Fran Acién and David Arias, with the help of Pablo Alvarez and Dani Kholer
+ *  SSTV emitter using arduino DUE
+ *
+ *
+ *  Note: I am using millis() instead of delay because it has more accurate
+**/
+
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
 #include <AD9850.h>
 #include <JPEGDecoder.h>
 #include <Adafruit_VC0706.h>
+#include <DueTimer.h>
 
 // Scottie 1 properties
 #define COLORCORRECTION 3.1372549
@@ -17,10 +26,10 @@
 #define SYNCPULSEFREQ 1200                  //Hz
 
 // AD9850 consts
-#define AD9850_CLK_PIN 22         //Working clock output pin
-#define AD9850_FQ_UPDATE_PIN 23   //Frequency update
-#define AD9850_DATA_PIN 24        //Serial data output pin
-#define AD9850_RST_PIN 25         //Reset output pin
+#define AD9850_CLK_PIN 51         //Working clock output pin
+#define AD9850_FQ_UPDATE_PIN 49   //Frequency update
+#define AD9850_DATA_PIN 47        //Serial data output pin
+#define AD9850_RST_PIN 45         //Reset output pin
 
 // Sd consts
 #define SD_SLAVE_PIN 53
@@ -28,16 +37,31 @@
 #define SD_MOSI_PIN 11
 #define SD_MISO_PIN 12
 
-uint8_t phase = 0;
+// Other stuff
+#define BUILT_IN_PIN 13
+
+volatile uint8_t phase = 0;
 
 char pic_filename[13];
 char pic_decoded_filename[13];
 
 uint8_t frameBuf[81920]; //320*256
 
-byte buffR[320]; // Buffer conintating Red values of the line
-byte buffG[320]; // Buffer conintating Green values of the line
-byte buffB[320]; // Buffer conintating Blue values of the line
+volatile byte buffR[320]; // Buffer conintating Red values of the line
+volatile byte buffG[320]; // Buffer conintating Green values of the line
+volatile byte buffB[320]; // Buffer conintating Blue values of the line
+
+volatile byte sEm = 0;    // State of Emition
+                    // 0 not emitting
+                    // 1 emitting line (NOT HEADER OR VOX)
+                    // 2 Change Color
+
+volatile byte sCol = 0;   // Transmitting color Green
+                    // Transmitting color Blue
+                    // Transmitting color Red
+
+volatile int tp = 0;     // Index of pixel while transmitting with timer
+
 
 // Camera stuff
 Adafruit_VC0706 cam = Adafruit_VC0706(&Serial1);
@@ -54,6 +78,7 @@ void shot_pic();
 void jpeg_decode(char* filename, char* fileout);
 
 char charId[13] = "EA4RCT-SSTV-"; // ***** INFORMATION HEADER: MAX 12 CAHARCTERS *****
+volatile long syncTime;
 
 //FONTS
 const uint8_t fonts[43][11] = {
@@ -102,8 +127,40 @@ const uint8_t fonts[43][11] = {
         {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}  //42: space
 };
 
+bool ledOn = false;
+
+void timer1_interrupt(){
+
+  if (sEm == 1){
+
+
+    if(tp < 320){  // Transmitting pixels
+      if(sCol == 0){  // Transmitting color Green
+        digitalWrite(BUILT_IN_PIN, true);
+        DDS.setfreq(1500 + 3.13 * buffG[tp], phase);
+      } else if(sCol == 1){ // Transmitting color Blue
+        DDS.setfreq(1500 + 3.13 * buffB[tp], phase);
+      } else if(sCol == 2){ // Transmitting color Red
+        DDS.setfreq(1500 + 3.13 * buffR[tp], phase);
+      }
+    } else if(tp == 320){
+      if(sCol == 0){  // Separator pulse previous to transmit Green
+        DDS.setfreq(1500, phase);
+      } else if(sCol == 1){ // Sync porch
+        DDS.setfreq(1200, phase);
+      } else if(sCol == 2){ // // Separator pulse previous to transmit Red
+        DDS.setfreq(1500, phase);
+      }
+      syncTime = micros();
+      sEm = 4;    // State when change color
+    }
+    tp++;
+  }
+}
+
 void setup() {
   delay(5000);
+  pinMode(BUILT_IN_PIN, OUTPUT);
   Serial.begin(9600);
   Serial.println("Starting");
 
@@ -118,18 +175,16 @@ void setup() {
   }
   Serial.println("initialization done.");
 
+  // Setup Timer with the emision interval
+  Timer1.attachInterrupt(timer1_interrupt).start(430); // ***** 354(uS/px) +/- SLANT ADJUST *****
+  delay(100);
+
+  /*
   shot_pic();
 
   Serial.print("Picture taken saved on:");
   Serial.println(pic_filename);
 
-  // Changing name
-<<<<<<< HEAD
-  strcpy(pic_decoded_filename,pic_filename);
-  pic_decoded_filename[8] = 'B';
-  pic_decoded_filename[9] = 'I';
-  pic_decoded_filename[10] = 'N';
-=======
   strcpy(pic_decoded_filename, pic_filename);
   pic_decoded_filename[8] = 'B';
   pic_decoded_filename[9] = 'I';
@@ -137,11 +192,13 @@ void setup() {
 
   Serial.print("Writting on: ");
   Serial.println(pic_decoded_filename);
->>>>>>> acien
 
   jpeg_decode(pic_filename, pic_decoded_filename);
 
   scottie1_transmit_file(pic_decoded_filename);
+  */
+
+  scottie1_transmit_file("RGB.DAT");
 }
 
 void loop() {
@@ -213,6 +270,7 @@ void scottie1_transmit_file(char* filename){
 
   File myFile = SD.open(filename);
   if (myFile) {
+
     /** VOX TONE (OPTIONAL) **/
     vox_tone();
 
@@ -220,11 +278,17 @@ void scottie1_transmit_file(char* filename){
     scottie1_calibrationHeader();
 
     /** STARTING SYNC PULSE (FIRST LINE ONLY)  **/
-    transmit_micro(1200, 9000);
+    DDS.setfreq(1200, phase);
+    syncTime = micros();
+    while(micros() - syncTime < 9000 - 10){}
 
-    int line = 0;
+    // Separator pulse
+    DDS.setfreq(1500, phase);
+    syncTime = micros();  // Configure syncTime
+
     /** TRANSMIT EACH LINE **/
     while(myFile.available()){
+
       // Read line and store color values in the buffer
       for(uint16_t i = 0; i < 320; i++){
         buffR[i] = myFile.read();
@@ -232,35 +296,36 @@ void scottie1_transmit_file(char* filename){
         buffB[i] = myFile.read();
       }
 
-      // Separator pulse
-      transmit_micro(1500, 1500);
+      while(micros() - syncTime < 1500 - 10){} // Separator pulse
 
       // Green Scan
-      for(uint16_t i = 0; i < 320; i++){
-        transmit_micro(scottie_freq(buffG[i]), 432);    // .4320ms/pixel
-      }
+      tp = 0; sCol = 0; sEm = 1;
+      while(sEm == 1){};
 
       // Separator Pulse
-      transmit_micro(1500, 1500);
+      DDS.setfreq(1500, phase);
+      while(micros() - syncTime < 1500 - 10){}
 
       // Blue Scan
-      for(uint16_t i = 0; i < 320; i++){
-        transmit_micro(scottie_freq(buffB[i]), 432);    // .4320ms/pixel
-      }
+      tp = 0; sCol = 1; sEm = 1;
+      while(sEm == 1){};
 
-      // Sync Pulse
-      transmit_micro(1200, 9000);
+      //Sync pulse
+      while(micros() - syncTime < 9000 - 10){}
 
       // Sync porch
-      transmit_micro(1500, 1500);
+      DDS.setfreq(1500, phase);
+      syncTime = micros();
+      while(micros() - syncTime < 1500 - 10){}
 
       // Red Scan
-      for(uint16_t i = 0; i < 320; i++){
-        transmit_micro(scottie_freq(buffR[i]), 432);    // .4320ms/pixel
-      }
+      tp = 0; sCol = 2; sEm = 1;
+      while(sEm == 1){};
     }
 
     Serial.println("Finish");
+    DDS.setfreq(2, phase);
+    sEm = 0;
 
     // close the file:
     myFile.close();
@@ -273,14 +338,14 @@ void scottie1_transmit_file(char* filename){
 void jpeg_decode(char* filename, char* fileout){
   uint8 *pImg;
   int x,y,bx,by;
-  byte sortBuf[15360]; //320(px)*16(lines)*3(bytes)
+  byte sortBuf[15360]; //320(px)*16(lines)*3(bytes) // Header buffer
   int i,j,k;
   int pxSkip;
 
   // Open the file for writing
   File imgFile = SD.open(fileout, FILE_WRITE);
 
-  for(i = 0; i < 15360; i++){
+  for(i = 0; i < 15360; i++){ // Cleaning Header Buffer array
     sortBuf[i] = 0xFF;
   }
 
@@ -319,12 +384,9 @@ void jpeg_decode(char* filename, char* fileout){
     }
   }
 
-
-
   for(k = 0; k < 15360; k++){  // Adding header to the binary file
     imgFile.write(sortBuf[k]);
   }
-
 
   // Decoding start
   JpegDec.decode(filename,0);
@@ -357,6 +419,7 @@ void jpeg_decode(char* filename, char* fileout){
               if(x<JpegDec.width && y<JpegDec.height){
                   if(JpegDec.comps == 1){ // Grayscale
                       //sprintf(str,"%u", pImg[0]);
+                      imgFile.write(pImg, 1);
                   }else{ // RGB
                       //sprintf(str,"%u%u%u", pImg[0], pImg[1], pImg[2]);
                       imgFile.write(pImg, 3);

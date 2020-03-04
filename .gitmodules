@@ -10,3 +10,6 @@
 [submodule "lib/SD"]
 	path = lib/SD
 	url = https://github.com/adafruit/SD.git
+[submodule "lib/DueTimer"]
+	path = lib/DueTimer
+	url = https://github.com/ivanseidel/DueTimer.git
