@@ -132,7 +132,6 @@ void timer1_interrupt(){
   if (sEm == 1){
     if(tp < 320){  // Transmitting pixels
       if(sCol == 0){  // Transmitting color Green
-        digitalWrite(BUILT_IN_PIN, true);
         DDS.setfreq(1500 + 3.13 * buffG[tp], phase);
       } else if(sCol == 1){ // Transmitting color Blue
         DDS.setfreq(1500 + 3.13 * buffB[tp], phase);
@@ -140,15 +139,15 @@ void timer1_interrupt(){
         DDS.setfreq(1500 + 3.13 * buffE[tp], phase);
       }
     } else if(tp == 320){
-      if(sCol == 0){  // Separator pulse previous to transmit Green
+      if(sCol == 0){  // Separator pulse after transmit Green
         DDS.setfreq(1500, phase);
       } else if(sCol == 1){ // Sync porch
         DDS.setfreq(1200, phase);
-      } else if(sCol == 2){ // // Separator pulse previous to transmit Red
+      } else if(sCol == 2){ // // Separator pulse after transmit Red
         DDS.setfreq(1500, phase);
       }
       syncTime = micros();
-      sEm = 4;    // State when change color
+      sEm = 2;    // State when change color
     }
     tp++;
   }
@@ -157,6 +156,7 @@ void timer1_interrupt(){
 void setup() {
   delay(5000);
   pinMode(BUILT_IN_PIN, OUTPUT);
+  pinMode(SD_SLAVE_PIN, OUTPUT);
   Serial.begin(9600);
   Serial.println("Starting");
 
@@ -175,7 +175,7 @@ void setup() {
   Timer1.attachInterrupt(timer1_interrupt).start(430); // ***** 354(uS/px) +/- SLANT ADJUST *****
   delay(100);
 
-  /*
+
   shot_pic();
 
   Serial.print("Picture taken saved on:");
@@ -192,9 +192,9 @@ void setup() {
   jpeg_decode(pic_filename, pic_decoded_filename);
 
   scottie1_transmit_file(pic_decoded_filename);
-  */
 
-  scottie1_transmit_file("RGB.DAT");
+
+  //scottie1_transmit_file("RGB.DAT");
 }
 
 void loop() {
@@ -292,6 +292,9 @@ void scottie1_transmit_file(char* filename){
           buffB[i] = myFile.read();
         }
 
+        //Serial.println("++");
+        //Serial.println(micros() - syncTime); //Cheak reading time
+
         while(micros() - syncTime < 9000 - 10){}
 
         // Separator pulse
@@ -309,7 +312,7 @@ void scottie1_transmit_file(char* filename){
       while(sEm == 1){};
 
       // Separator Pulse
-      DDS.setfreq(1500, phase);
+      DDS.setfreq(1500, phase); //USELESS
       while(micros() - syncTime < 1500 - 10){}
 
       // Blue Scan
@@ -330,6 +333,9 @@ void scottie1_transmit_file(char* filename){
         }
       }
 
+      //Serial.println("--");
+      //Serial.println(micros() - syncTime); //Cheak reading time
+
       //Sync pulse
       while(micros() - syncTime < 9000 - 10){}
 
@@ -346,12 +352,13 @@ void scottie1_transmit_file(char* filename){
       if(line == 256){
         Serial.println("Finish");
         DDS.setfreq(2, phase);
+        DDS.down();
         sEm = 0;
       }
       else {
         // Separator pulse
-        DDS.setfreq(1500, phase);
-        syncTime = micros();
+        DDS.setfreq(1500, phase); //USELESS
+        syncTime = micros(); //USELESS
         sEm = 2;
       }
     }
@@ -438,6 +445,9 @@ void jpeg_decode(char* filename, char* fileout){
   Serial.println("");
 
   Serial.println("Writting bin to SD");
+
+  i = 0;
+  j = 0;
   while(JpegDec.read()){
       pImg = JpegDec.pImage ;
       for(by=0; by<JpegDec.MCUHeight; by++){
@@ -450,7 +460,23 @@ void jpeg_decode(char* filename, char* fileout){
                       imgFile.write(pImg, 1);
                   }else{ // RGB
                       //sprintf(str,"%u%u%u", pImg[0], pImg[1], pImg[2]);
-                      imgFile.write(pImg, 3);
+                      //imgFile.write(pImg, 3);
+
+                      // First we write on array and then save it
+                      // Read 16 lines  and the write it successively
+                      pxSkip = ((y - (16 * j)) * 320) + x;
+                      sortBuf[(3 * pxSkip) + 0] = pImg[0];
+                      sortBuf[(3 * pxSkip) + 1] = pImg[1];
+                      sortBuf[(3 * pxSkip) + 2] = pImg[2];
+
+                      i++;
+                      if(i == 5120){ //320(px)x16(lines)
+                        for(k = 0; k < 15360; k++){
+                          imgFile.write(sortBuf[k]);
+                        }
+                        i = 0;
+                        j++; //15(sections)
+                      }
                   }
               }
               pImg += JpegDec.comps ;
@@ -471,7 +497,9 @@ void shot_pic(){
     return;
   }
 
-  cam.setImageSize(VC0706_320x240);
+  for (int i = 0; i <= 10; i++){
+    cam.setImageSize(VC0706_320x240);
+  }
 
   Serial.println("Snap in 3 secs...");
   delay(3000);
