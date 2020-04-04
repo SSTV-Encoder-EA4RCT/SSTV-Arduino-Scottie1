@@ -47,6 +47,7 @@ char pic_decoded_filename[13];
 
 uint8_t frameBuf[81920]; //320*256
 
+volatile byte buffE[320]; // Buffer conintating Red values after torch
 volatile byte buffR[320]; // Buffer conintating Red values of the line
 volatile byte buffG[320]; // Buffer conintating Green values of the line
 volatile byte buffB[320]; // Buffer conintating Blue values of the line
@@ -61,7 +62,7 @@ volatile byte sCol = 0;   // Transmitting color Green
                     // Transmitting color Red
 
 volatile int tp = 0;     // Index of pixel while transmitting with timer
-
+volatile int line;
 
 // Camera stuff
 Adafruit_VC0706 cam = Adafruit_VC0706(&Serial1);
@@ -127,13 +128,8 @@ const uint8_t fonts[43][11] = {
         {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}  //42: space
 };
 
-bool ledOn = false;
-
 void timer1_interrupt(){
-
   if (sEm == 1){
-
-
     if(tp < 320){  // Transmitting pixels
       if(sCol == 0){  // Transmitting color Green
         digitalWrite(BUILT_IN_PIN, true);
@@ -141,7 +137,7 @@ void timer1_interrupt(){
       } else if(sCol == 1){ // Transmitting color Blue
         DDS.setfreq(1500 + 3.13 * buffB[tp], phase);
       } else if(sCol == 2){ // Transmitting color Red
-        DDS.setfreq(1500 + 3.13 * buffR[tp], phase);
+        DDS.setfreq(1500 + 3.13 * buffE[tp], phase);
       }
     } else if(tp == 320){
       if(sCol == 0){  // Separator pulse previous to transmit Green
@@ -266,34 +262,44 @@ void transmit_mili(int freq, float duration){
 }
 
 void scottie1_transmit_file(char* filename){
+  /*
+  Be aware that you have to read variables on sync torch due its 9 ms instead 1.5 ms of the sync Pulse
+  */
+
+  bool head;
   Serial.println("Transmitting picture");
 
   File myFile = SD.open(filename);
   if (myFile) {
-
-    /** VOX TONE (OPTIONAL) **/
-    vox_tone();
-
-    /** CALIBRATION HEADER **/
-    scottie1_calibrationHeader();
-
-    /** STARTING SYNC PULSE (FIRST LINE ONLY)  **/
-    DDS.setfreq(1200, phase);
-    syncTime = micros();
-    while(micros() - syncTime < 9000 - 10){}
-
-    // Separator pulse
-    DDS.setfreq(1500, phase);
-    syncTime = micros();  // Configure syncTime
+    head = true;
 
     /** TRANSMIT EACH LINE **/
-    while(myFile.available()){
+    while(myFile.available() || line == 255){
+      if(head == true){ // Header
+        /** VOX TONE (OPTIONAL) **/
+        vox_tone();
 
-      // Read line and store color values in the buffer
-      for(uint16_t i = 0; i < 320; i++){
-        buffR[i] = myFile.read();
-        buffG[i] = myFile.read();
-        buffB[i] = myFile.read();
+        /** CALIBRATION HEADER **/
+        scottie1_calibrationHeader();
+
+        // Configure syncTime
+        syncTime = micros();
+
+        // Read line and store color values in the buffer
+        for(uint16_t i = 0; i < 320; i++){
+          buffR[i] = myFile.read();
+          buffG[i] = myFile.read();
+          buffB[i] = myFile.read();
+        }
+
+        while(micros() - syncTime < 9000 - 10){}
+
+        // Separator pulse
+        DDS.setfreq(1500, phase);
+        syncTime = micros();  // Configure syncTime
+
+        line = 0;
+        head = false;
       }
 
       while(micros() - syncTime < 1500 - 10){} // Separator pulse
@@ -310,6 +316,20 @@ void scottie1_transmit_file(char* filename){
       tp = 0; sCol = 1; sEm = 1;
       while(sEm == 1){};
 
+      //Evacuate
+      for(uint16_t i = 0; i < 320; i++){
+        buffE[i] = buffR[i];
+      }
+
+      if(line != 255){
+        // Read line and store color values in the buffer
+        for(uint16_t i = 0; i < 320; i++){
+          buffR[i] = myFile.read();
+          buffG[i] = myFile.read();
+          buffB[i] = myFile.read();
+        }
+      }
+
       //Sync pulse
       while(micros() - syncTime < 9000 - 10){}
 
@@ -321,12 +341,20 @@ void scottie1_transmit_file(char* filename){
       // Red Scan
       tp = 0; sCol = 2; sEm = 1;
       while(sEm == 1){};
+
+      line++;
+      if(line == 256){
+        Serial.println("Finish");
+        DDS.setfreq(2, phase);
+        sEm = 0;
+      }
+      else {
+        // Separator pulse
+        DDS.setfreq(1500, phase);
+        syncTime = micros();
+        sEm = 2;
+      }
     }
-
-    Serial.println("Finish");
-    DDS.setfreq(2, phase);
-    sEm = 0;
-
     // close the file:
     myFile.close();
   } else {
