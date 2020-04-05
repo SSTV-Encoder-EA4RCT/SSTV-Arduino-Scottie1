@@ -13,3 +13,6 @@
 [submodule "lib/DueTimer"]
 	path = lib/DueTimer
 	url = https://github.com/ivanseidel/DueTimer.git
+[submodule "lib/Aafruit_GPS"]
+	path = lib/Aafruit_GPS
+	url = https://github.com/adafruit/Adafruit_GPS.git
