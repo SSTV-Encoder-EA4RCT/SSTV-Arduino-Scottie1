@@ -2,8 +2,6 @@
  * @author: Fran Acién and David Arias, with the help of Pablo Alvarez and Dani Kholer
  *  SSTV emitter using arduino DUE
  *
- *
- *  Note: I am using millis() instead of delay because it has more accurate
 **/
 
 #include <Arduino.h>
@@ -175,7 +173,6 @@ void setup() {
   Timer1.attachInterrupt(timer1_interrupt).start(430); // ***** 354(uS/px) +/- SLANT ADJUST *****
   delay(100);
 
-
   shot_pic();
 
   Serial.print("Picture taken saved on:");
@@ -192,9 +189,6 @@ void setup() {
   jpeg_decode(pic_filename, pic_decoded_filename);
 
   scottie1_transmit_file(pic_decoded_filename);
-
-
-  //scottie1_transmit_file("RGB.DAT");
 }
 
 void loop() {
@@ -312,7 +306,7 @@ void scottie1_transmit_file(char* filename){
       while(sEm == 1){};
 
       // Separator Pulse
-      DDS.setfreq(1500, phase); //USELESS
+      DDS.setfreq(1500, phase);
       while(micros() - syncTime < 1500 - 10){}
 
       // Blue Scan
@@ -357,8 +351,8 @@ void scottie1_transmit_file(char* filename){
       }
       else {
         // Separator pulse
-        DDS.setfreq(1500, phase); //USELESS
-        syncTime = micros(); //USELESS
+        DDS.setfreq(1500, phase);
+        syncTime = micros();
         sEm = 2;
       }
     }
@@ -449,39 +443,36 @@ void jpeg_decode(char* filename, char* fileout){
   i = 0;
   j = 0;
   while(JpegDec.read()){
-      pImg = JpegDec.pImage ;
-      for(by=0; by<JpegDec.MCUHeight; by++){
-          for(bx=0; bx<JpegDec.MCUWidth; bx++){
-              x = JpegDec.MCUx * JpegDec.MCUWidth + bx;
-              y = JpegDec.MCUy * JpegDec.MCUHeight + by;
-              if(x<JpegDec.width && y<JpegDec.height){
-                  if(JpegDec.comps == 1){ // Grayscale
-                      //sprintf(str,"%u", pImg[0]);
-                      imgFile.write(pImg, 1);
-                  }else{ // RGB
-                      //sprintf(str,"%u%u%u", pImg[0], pImg[1], pImg[2]);
-                      //imgFile.write(pImg, 3);
+    pImg = JpegDec.pImage ;
+    for(by=0; by<JpegDec.MCUHeight; by++){
+      for(bx=0; bx<JpegDec.MCUWidth; bx++){
+        x = JpegDec.MCUx * JpegDec.MCUWidth + bx;
+        y = JpegDec.MCUy * JpegDec.MCUHeight + by;
+        if(x<JpegDec.width && y<JpegDec.height){
+          if(JpegDec.comps == 1){ // Grayscale
+            //sprintf(str,"%u", pImg[0]);
+            imgFile.write(pImg, 1);
+          }else{ // RGB
+            // When saving to the SD, write 16 lines on one time
+            // First we write on the array 16 lines and then we save to SD
+            pxSkip = ((y - (16 * j)) * 320) + x;
+            sortBuf[(3 * pxSkip) + 0] = pImg[0];
+            sortBuf[(3 * pxSkip) + 1] = pImg[1];
+            sortBuf[(3 * pxSkip) + 2] = pImg[2];
 
-                      // First we write on array and then save it
-                      // Read 16 lines  and the write it successively
-                      pxSkip = ((y - (16 * j)) * 320) + x;
-                      sortBuf[(3 * pxSkip) + 0] = pImg[0];
-                      sortBuf[(3 * pxSkip) + 1] = pImg[1];
-                      sortBuf[(3 * pxSkip) + 2] = pImg[2];
-
-                      i++;
-                      if(i == 5120){ //320(px)x16(lines)
-                        for(k = 0; k < 15360; k++){
-                          imgFile.write(sortBuf[k]);
-                        }
-                        i = 0;
-                        j++; //15(sections)
-                      }
-                  }
+            i++;
+            if(i == 5120){ //320(px)x16(lines)
+              for(k = 0; k < 15360; k++){
+                imgFile.write(sortBuf[k]);
               }
-              pImg += JpegDec.comps ;
+              i = 0;
+              j++; //15(sections)
+            }
           }
+        }
+        pImg += JpegDec.comps ;
       }
+    }
   }
 
   Serial.println("Bin has been written on SD");
