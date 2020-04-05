@@ -11,6 +11,7 @@
 #include <JPEGDecoder.h>
 #include <Adafruit_VC0706.h>
 #include <DueTimer.h>
+#include <Adafruit_GPS.h>
 
 // Scottie 1 properties
 #define COLORCORRECTION 3.1372549
@@ -75,12 +76,14 @@ void transmit_mili(int freq, float duration);
 void scottie1_transmit_file(char* filename);
 void shot_pic();
 void jpeg_decode(char* filename, char* fileout);
+//void writeFooter(File* dst, nmea_float_t latitude, char lat, nmea_float_t longitude, char lon, nmea_float_t altitude);    //Write 16 lines with values
+void writeFooter(File* dst);
 
 char charId[13] = "EA4RCT-SSTV-"; // ***** INFORMATION HEADER: MAX 12 CAHARCTERS *****
 volatile long syncTime;
 
 //FONTS
-const uint8_t fonts[43][11] = {
+const uint8_t b_fonts[43][11] = {
         {0x00, 0x18, 0x24, 0x62, 0x62, 0x62, 0x7E, 0x62, 0x62, 0x62, 0x00}, //00: A
         {0x00, 0x7C, 0x32, 0x32, 0x32, 0x3C, 0x32, 0x32, 0x32, 0x7C, 0x00}, //01: B
         {0x00, 0x3C, 0x62, 0x62, 0x60, 0x60, 0x60, 0x62, 0x62, 0x3C, 0x00}, //02: C
@@ -124,6 +127,33 @@ const uint8_t fonts[43][11] = {
         {0x00, 0x18, 0x18, 0x18, 0x18, 0x10, 0x10, 0x00, 0x18, 0x18, 0x00}, //40: !
         {0x00, 0x00, 0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00, 0x00}, //41: :
         {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}  //42: space
+};
+
+// Nibble font table
+const uint8_t l_fonts[23][5] = {
+  { 0xE2, 0xA6, 0xA2, 0xA2, 0xE2 }, // 0: 01
+  { 0xEE, 0x22, 0xE6, 0x82, 0xEE }, // 1: 23
+  { 0xAE, 0xA8, 0xEE, 0x22, 0x2E }, // 2: 45
+  { 0x8E, 0x82, 0xE2, 0xA2, 0xE2 }, // 3: 67
+  { 0xEE, 0xAA, 0xEE, 0xA2, 0xE2 }, // 4: 89
+  { 0x00, 0x22, 0x00, 0x22, 0x04 }, // 5: :;
+  { 0x20, 0x4E, 0x80, 0x4E, 0x20 }, // 6: <=
+  { 0x8E, 0x42, 0x26, 0x40, 0x84 }, // 7: >?
+  { 0x64, 0x9A, 0xBE, 0x8A, 0x7A }, // 8: @A
+  { 0xC6, 0xA8, 0xC8, 0xA8, 0xC6 }, // 9: BC
+  { 0xCE, 0xA8, 0xAC, 0xA8, 0xCE }, // 10: DE
+  { 0xE6, 0x88, 0xCE, 0x8A, 0x86 }, // 11: FG
+  { 0xA4, 0xA4, 0xE4, 0xA4, 0xA4 }, // 12: HI
+  { 0x69, 0x2A, 0x2C, 0x2A, 0x49 }, // 13: JK
+  { 0x8A, 0x8E, 0x8E, 0x8A, 0xEA }, // 14: LM
+  { 0x04, 0x9A, 0xDA, 0xBA, 0x94 }, // 15: NO
+  { 0xC4, 0xAA, 0xCA, 0x8E, 0x86 }, // 16: PQ
+  { 0xC6, 0xA8, 0xC4, 0xA2, 0xAC }, // 17: RS
+  { 0xE0, 0x4A, 0x4A, 0x4A, 0x44 }, // 18: TU
+  { 0x09, 0xA9, 0xA9, 0x6F, 0x26 }, // 19: vW (sort of..)
+  { 0x0A, 0xAA, 0x46, 0xA2, 0x04 }, // 20: XY
+  { 0xE6, 0x24, 0x44, 0x84, 0xE6 }, // 21: Z[
+  { 0x00, 0x00, 0x00, 0x00, 0x00 }  // 22: SPACE
 };
 
 void timer1_interrupt(){
@@ -404,7 +434,7 @@ void jpeg_decode(char* filename, char* fileout){
         else if(ch == ' '){fontNumber = 42;}
         else              {fontNumber = 42;}
 
-        if((fonts[fontNumber][y] & mask) != 0){
+        if((b_fonts[fontNumber][y] & mask) != 0){
           for(j = 0; j < 9; j++){
                   sortBuf[(3 * pxSkip) + j] = 0x00;
           }
@@ -416,6 +446,8 @@ void jpeg_decode(char* filename, char* fileout){
   for(k = 0; k < 15360; k++){  // Adding header to the binary file
     imgFile.write(sortBuf[k]);
   }
+
+  writeFooter(&imgFile);  //Writing first 10560 bytes (11*320*3)
 
   // Decoding start
   JpegDec.decode(filename,0);
@@ -542,4 +574,61 @@ void shot_pic(){
   time = millis() - time;
   Serial.println("done!");
   Serial.print(time); Serial.println(" ms elapsed");
+}
+
+/**     Write on a file with 11 lines the values of the GPS
+ * @param dst Given an opened File stream then write data to dst.
+ * @param latitude Floating point latitude value in degrees/min as received from the GPS (DDMM.MMMM)
+ * @param lat N/S
+ * @param longitude Floating point longitude value in degrees/min as received from the GPS (DDMM.MMMM)
+ * @param lon E/W
+ * @param altitude Altitude in meters above MSL
+ */
+
+//void writeFooter(File* dst, nmea_float_t latitude, char lat, nmea_float_t longitude, char lon, nmea_float_t altitude){    //Write 16 lines with values
+void writeFooter(File* dst){
+  int x,y;
+  byte sortBuf[10560]; //320(px)*11(lines)*3(bytes) // Header buffer
+  int i,j,k;
+  int pxSkip;
+
+  char res[51] = "LAT: 1234.1234N     LONG: 1234.1234W     ALT:10000";
+
+  for(i = 0; i < 10560; i++){ // Cleaning Header Buffer array
+    sortBuf[i] = 0xFF;
+  }
+
+  for(i = 0; i < sizeof(res); i++){
+    byte fontNumber;
+    char ch;
+    ch = res[i];
+    for(y = 0; y < 5; y++){
+      for(x = 0; x < 4; x++){
+        //pxSkip = HORIZONTALOFFSET + VERSTICALOFFSET + (BITSPERWORD * i);
+        //pxSkip = 16 + (320 * (y + 3)) + (4 * 2 * i) + (2 * x); Width: x2
+        pxSkip = 16 + (320 * (y + 3)) + (4 * i) + x;
+
+        // If ch is pair mask is: 11110000, if no 00001111
+        uint8_t sl = (ch % 2)? 3 : 7 ;
+        uint8_t mask = pow(2, sl - x);
+
+        if(ch >= 48 && ch <=91){
+          fontNumber = (ch-48)/2;
+        }
+        else {
+          fontNumber = 22;
+        }
+
+        if((l_fonts[fontNumber][y] & mask) != 0){
+          for(j = 0; j < 3; j++){
+                  sortBuf[(3 * pxSkip) + j] = 0x00;
+          }
+        }
+      }
+    }
+  }
+
+  for(k = 0; k < 10560; k++){  // Adding header to the binary file
+    dst->write(sortBuf[k]);
+  }
 }
