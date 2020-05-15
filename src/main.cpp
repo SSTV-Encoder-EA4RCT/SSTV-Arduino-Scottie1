@@ -76,8 +76,8 @@ void transmit_mili(int freq, float duration);
 void scottie1_transmit_file(char* filename);
 void shot_pic();
 void jpeg_decode(char* filename, char* fileout);
-//void writeFooter(File* dst, nmea_float_t latitude, char lat, nmea_float_t longitude, char lon, nmea_float_t altitude);    //Write 16 lines with values
-void writeFooter(File* dst);
+//void writeHeader(File* dst, nmea_float_t latitude, char lat, nmea_float_t longitude, char lon, nmea_float_t altitude);    //Write 16 lines with values
+void writeHeader(File* dst);
 
 char charId[13] = "EA4RCT-SSTV-"; // ***** INFORMATION HEADER: MAX 12 CAHARCTERS *****
 volatile long syncTime;
@@ -447,7 +447,7 @@ void jpeg_decode(char* filename, char* fileout){
     imgFile.write(sortBuf[k]);
   }
 
-  writeFooter(&imgFile);  //Writing first 10560 bytes (11*320*3)
+  writeHeader(&imgFile);  //Writing first 10560 bytes (11*320*3)
 
   // Decoding start
   JpegDec.decode(filename,0);
@@ -585,8 +585,8 @@ void shot_pic(){
  * @param altitude Altitude in meters above MSL
  */
 
-//void writeFooter(File* dst, nmea_float_t latitude, char lat, nmea_float_t longitude, char lon, nmea_float_t altitude){    //Write 16 lines with values
-void writeFooter(File* dst){
+//void writeHeader(File* dst, nmea_float_t latitude, char lat, nmea_float_t longitude, char lon, nmea_float_t altitude){    //Write 16 lines with values
+void writeHeader(File* dst){
   int x,y;
   byte sortBuf[10560]; //320(px)*11(lines)*3(bytes) // Header buffer
   int i,j,k;
